@@ -1,0 +1,98 @@
+// MODEL_TYPE은 사용할 OpenAI 모델을 지정합니다.
+// MY_API_KEY는 스크립트 속성에서 API 키를 검색합니다.
+const MODEL_TYPE = "gpt-3.5-turbo";
+const MY_API_KEY = PropertiesService.getScriptProperties().getProperty('API_KEY');
+
+// GoogleSlides 매개 변수
+const presentation = SlidesApp.getActivePresentation();
+const slide = presentation.getSelection().getCurrentPage();
+const ui = SlidesApp.getUi();
+
+// CreateMenu 함수는 Google 문서의 메뉴 모음에 버튼을 생성합니다.
+function onOpen() {
+  ui.createMenu("나의AI")
+  .addItem("발표 개요 작성", "callOpenAI")
+  .addItem("이미지 생성", "generateImage")
+  .addToUi();
+}
+
+function setRequestOptions(requestBody){
+    const requestOptions = {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: "Bearer " + MY_API_KEY,
+    },
+    payload: JSON.stringify(requestBody),
+  };
+  return requestOptions
+}
+
+function getSlideDimension(){
+  // 슬라이드 크기 가져오기
+  const slideWidth = presentation.getPageWidth();
+  const slideHeight = presentation.getPageHeight();
+
+  // 푸터 모양의 크기와 위치 계산
+  const footerHeight = 200; // 원하는 푸터 높이로 변경하세요
+  const footerX = 10;
+  const footerY = slideHeight - footerHeight;
+  const footerWidth = slideWidth - 10;
+
+  // 푸터 내부에 텍스트 상자 생성
+  const textBox = slide.insertShape(SlidesApp.ShapeType.TEXT_BOX, footerX, footerY, footerWidth, footerHeight);
+  return textBox;
+}
+
+function callOpenAI(){
+  const temperature = 0;
+  const maxTokens = 4000;
+
+  const presentation = SlidesApp.getActivePresentation();
+  const selectedText = presentation.getSelection().getCurrentPage().getShapes()[0].getText().asString();
+  const gptPrompt = "다음 주제에 대해 5개의 핵심 개요를 작성하세요: " + selectedText;
+
+  const requestBody = {
+    model: MODEL_TYPE,
+    messages: [{ role: "user", content: gptPrompt }],
+    temperature,
+    max_tokens: maxTokens,
+  };
+
+  var requestOptions = setRequestOptions(requestBody)
+
+  const response = UrlFetchApp.fetch("https://api.openai.com/v1/chat/completions", requestOptions);
+  const responseText = response.getContentText();
+  const json = JSON.parse(responseText);
+  const generatedText = json['choices'][0]['message']['content'];
+  Logger.log(generatedText);
+
+  const textRange = getSlideDimension().getText();
+  textRange.setText(generatedText.toString());
+
+  // 텍스트 상자 속성 설정
+  textRange.getTextStyle().setFontSize(20); // 텍스트 상자의 원하는 글꼴 크기로 변경하세요
+  textRange.getTextStyle().setBold(false); // 텍스트 상자의 원하는 글꼴 두께로 변경하세요
+  textRange.getTextStyle().setForegroundColor('#000000'); // 텍스트 상자의 원하는 글꼴 색상 으로 변경하세요
+// textRange.getTextStyle().setBackgroundColor('#e9f6ff'); // 텍스트 상자의 원하는 배경 색상으로 변경하세요
+}
+
+function generateImage() {
+const imagePrompt = presentation.getSelection().getCurrentPage().getShapes()[0].getText().asString();
+
+const requestBody2 = {
+"prompt": imagePrompt,
+"n": 1,
+"size": "512x512"
+};
+
+var requestOptions = setRequestOptions(requestBody2)
+const response2 = UrlFetchApp.fetch("https://api.openai.com/v1/images/generations", requestOptions);
+
+// 응답을 해석하고 생성된 이미지 가져오기
+var responseImage = response2.getContentText();
+var json = JSON.parse(responseImage);
+var imageUrl=json['data'][0]['url']
+var imageBlob = UrlFetchApp.fetch(imageUrl).getBlob();
+slide.insertImage(imageBlob);
+}
